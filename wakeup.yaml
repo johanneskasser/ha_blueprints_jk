@@ -90,18 +90,24 @@ action:
           - condition: template
             value_template: "{{ pre_sunrise_actions | length > 0 }}"
         sequence: !input pre_sunrise_actions
-  - variables:
-      lights_to_control: >-
-        {% if secondary_light != 'none' %}
-        [primary_light, secondary_light]
-        {% else %}
-        [primary_light]
-        {% endif %}
-  - service: light.turn_on
-    data:
-      brightness: 1
-    target:
-      entity_id: "{{ lights_to_control }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ secondary_light != 'none' }}"
+        sequence:
+          - service: light.turn_on
+            data:
+              brightness: 1
+            target:
+              entity_id:
+                - !input light_entity
+                - !input secondary_light_entity
+      default:
+        - service: light.turn_on
+          data:
+            brightness: 1
+          target:
+            entity_id: !input light_entity
   - repeat:
       while:
         - condition: template
@@ -109,12 +115,26 @@ action:
             {{ alarm_time and as_timestamp(now()) < alarm_time }}
       sequence:
         - delay: 1
-        - service: light.turn_on
-          data:
-            brightness: >-
-              {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
-          target:
-            entity_id: "{{ lights_to_control }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ secondary_light != 'none' }}"
+              sequence:
+                - service: light.turn_on
+                  data:
+                    brightness: >-
+                      {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
+                  target:
+                    entity_id:
+                      - !input light_entity
+                      - !input secondary_light_entity
+            - default:
+                - service: light.turn_on
+                  data:
+                    brightness: >-
+                      {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
+                  target:
+                    entity_id: !input light_entity
   - choose:
       - conditions:
           - condition: template
