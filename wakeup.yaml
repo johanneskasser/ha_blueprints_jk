@@ -1,24 +1,16 @@
 blueprint:
-  name: Wake-up light alarm with sunrise effect (multi-light)
+  name: Wake-up light alarm with sunrise effect
   description: >-
     A wake-up light alarm with a brightness and color temperature sunrise effect.
-    Supports controlling multiple lights, optional pre-sunrise and post-sunrise actions.
+    Supports a single light entity, optional pre-sunrise, and post-sunrise actions.
   domain: automation
   input:
     light_entity:
-      name: Primary wake-up light entity
-      description: The main light to control during the sunrise effect.
+      name: Wake-up light entity
+      description: The light to control during the sunrise effect.
       selector:
         entity:
           domain: light
-    secondary_light_entity:
-      name: Secondary wake-up light entity
-      description: Optional second light to control during the sunrise effect.
-      default: none
-      selector:
-        entity:
-          domain: light
-          multiple: false
     timestamp_sensor:
       name: Alarm timestamp (sensor or input_datetime)
       description: >-
@@ -64,8 +56,7 @@ blueprint:
         action: {}
 
 variables:
-  primary_light: !input light_entity
-  secondary_light: !input secondary_light_entity
+  light: !input light_entity
   timestamp_sensor: !input timestamp_sensor
   manual_time: !input manual_time
   sunrise_duration: !input sunrise_duration
@@ -90,24 +81,11 @@ action:
           - condition: template
             value_template: "{{ pre_sunrise_actions | length > 0 }}"
         sequence: !input pre_sunrise_actions
-  - choose:
-      - conditions:
-          - condition: template
-            value_template: "{{ secondary_light != 'none' }}"
-        sequence:
-          - service: light.turn_on
-            data:
-              brightness: 1
-            target:
-              entity_id:
-                - !input light_entity
-                - !input secondary_light_entity
-      default:
-        - service: light.turn_on
-          data:
-            brightness: 1
-          target:
-            entity_id: !input light_entity
+  - service: light.turn_on
+    data:
+      brightness: 1
+    target:
+      entity_id: !input light_entity
   - repeat:
       while:
         - condition: template
@@ -115,26 +93,12 @@ action:
             {{ alarm_time and as_timestamp(now()) < alarm_time }}
       sequence:
         - delay: 1
-        - choose:
-            - conditions:
-                - condition: template
-                  value_template: "{{ secondary_light != 'none' }}"
-              sequence:
-                - service: light.turn_on
-                  data:
-                    brightness: >-
-                      {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
-                  target:
-                    entity_id:
-                      - !input light_entity
-                      - !input secondary_light_entity
-            - default:
-                - service: light.turn_on
-                  data:
-                    brightness: >-
-                      {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
-                  target:
-                    entity_id: !input light_entity
+        - service: light.turn_on
+          data:
+            brightness: >-
+              {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
+          target:
+            entity_id: !input light_entity
   - choose:
       - conditions:
           - condition: template
