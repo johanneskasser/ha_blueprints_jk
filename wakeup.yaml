@@ -1,17 +1,19 @@
 blueprint:
   name: Wake-up light alarm with sunrise effect (multi-light)
-  description: 'A wake-up light alarm with a brightness and color temperature sunrise effect. Supports controlling two lights.'
+  description: >-
+    A wake-up light alarm with a brightness and color temperature sunrise effect.
+    Supports controlling multiple lights, optional pre-sunrise and post-sunrise actions.
   domain: automation
   input:
     light_entity:
       name: Primary wake-up light entity
-      description: The main light to control. Turning it off during the sunrise will keep it off.
+      description: The main light to control during the sunrise effect.
       selector:
         entity:
           domain: light
     secondary_light_entity:
       name: Secondary wake-up light entity
-      description: An optional second light to control during the sunrise effect.
+      description: Optional second light to control during the sunrise effect.
       default: none
       selector:
         entity:
@@ -19,19 +21,22 @@ blueprint:
           multiple: false
     timestamp_sensor:
       name: Alarm timestamp (sensor or input_datetime)
-      description: 'Sensor with timestamp of the next alarm or input_datetime entity.'
+      description: >-
+        Sensor or input_datetime entity for the alarm timestamp. If none, uses manual time.
       default: none
       selector:
         entity: {}
     manual_time:
       name: Manual alarm time
-      description: Time to trigger alarm every day if no timestamp is provided.
-      default: '07:00:00'
+      description: >-
+        Time to trigger alarm daily if no timestamp sensor is provided. Set in HH:MM:SS format.
+      default: "07:00:00"
       selector:
         time: {}
     check_entity:
-      name: Additional entity to check before sunrise is triggered
-      description: If set, checks if entity is 'on' or 'home' before triggering.
+      name: Additional entity to check before sunrise
+      description: >-
+        Optional. Checks if the entity (e.g., device_tracker or person) is 'on' or 'home' before triggering.
       default: none
       selector:
         entity: {}
@@ -47,31 +52,32 @@ blueprint:
           unit_of_measurement: min
     pre_sunrise_actions:
       name: Pre-sunrise actions
-      description: Optional actions to run before sunrise starts.
+      description: Actions to run at the start of the sunrise effect.
       default: []
       selector:
         action: {}
     post_sunrise_actions:
       name: Post-sunrise actions
-      description: Optional actions to run after sunrise ends.
+      description: Actions to run after the sunrise effect ends.
       default: []
       selector:
         action: {}
 
 variables:
-  primary_light: !input 'light_entity'
-  secondary_light: !input 'secondary_light_entity'
-  timestamp_sensor: !input 'timestamp_sensor'
-  manual_time: !input 'manual_time'
-  sunrise_duration: !input 'sunrise_duration'
-  seconds: '{{ sunrise_duration * 60 }}'
+  primary_light: !input light_entity
+  secondary_light: !input secondary_light_entity
+  timestamp_sensor: !input timestamp_sensor
+  manual_time: !input manual_time
+  sunrise_duration: !input sunrise_duration
+  seconds: "{{ sunrise_duration * 60 }}"
   alarm_time: >-
-    {{ as_timestamp(states(timestamp_sensor)) if states(timestamp_sensor) != 'none' else as_timestamp(states('sensor.date') ~ ' ' ~ manual_time) }}
-  check_entity: !input 'check_entity'
+    {{ as_timestamp(states(timestamp_sensor)) if states(timestamp_sensor) != 'none' else
+       as_timestamp(states('sensor.date') ~ ' ' ~ manual_time) }}
+  check_entity: !input check_entity
 
 trigger:
   - platform: time_pattern
-    minutes: '*'
+    minutes: "*"
 
 condition: []
 
@@ -80,13 +86,19 @@ action:
       {{ alarm_time and 0 < alarm_time - as_timestamp(now()) <= seconds and
       (check_entity == 'none' or states(check_entity) in ['on', 'home']) }}
   - choose:
-      default: !input 'pre_sunrise_actions'
+      - conditions:
+          - condition: template
+            value_template: "{{ pre_sunrise_actions | length > 0 }}"
+        sequence: !input pre_sunrise_actions
   - service: light.turn_on
     data:
       brightness: 1
-    entity_id: 
-      - '{{ primary_light }}'
-      - '{{ secondary_light if secondary_light != "none" else primary_light }}'
+    entity_id: >
+      {% if secondary_light != 'none' %}
+      [primary_light, secondary_light]
+      {% else %}
+      [primary_light]
+      {% endif %}
   - repeat:
       while:
         - condition: template
@@ -98,10 +110,16 @@ action:
           data:
             brightness: >-
               {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
-          entity_id: 
-            - '{{ primary_light }}'
-            - '{{ secondary_light if secondary_light != "none" else primary_light }}'
+          entity_id: >
+            {% if secondary_light != 'none' %}
+            [primary_light, secondary_light]
+            {% else %}
+            [primary_light]
+            {% endif %}
   - choose:
-      default: !input 'post_sunrise_actions'
+      - conditions:
+          - condition: template
+            value_template: "{{ post_sunrise_actions | length > 0 }}"
+        sequence: !input post_sunrise_actions
 
 mode: single
