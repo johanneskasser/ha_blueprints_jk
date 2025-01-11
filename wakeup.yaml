@@ -90,15 +90,18 @@ action:
           - condition: template
             value_template: "{{ pre_sunrise_actions | length > 0 }}"
         sequence: !input pre_sunrise_actions
+  - variables:
+      lights_to_control: >-
+        {% if secondary_light != 'none' %}
+        [primary_light, secondary_light]
+        {% else %}
+        [primary_light]
+        {% endif %}
   - service: light.turn_on
     data:
       brightness: 1
-    entity_id: >
-      {% if secondary_light != 'none' %}
-      [primary_light, secondary_light]
-      {% else %}
-      [primary_light]
-      {% endif %}
+    target:
+      entity_id: "{{ lights_to_control }}"
   - repeat:
       while:
         - condition: template
@@ -110,12 +113,8 @@ action:
           data:
             brightness: >-
               {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
-          entity_id: >
-            {% if secondary_light != 'none' %}
-            [primary_light, secondary_light]
-            {% else %}
-            [primary_light]
-            {% endif %}
+          target:
+            entity_id: "{{ lights_to_control }}"
   - choose:
       - conditions:
           - condition: template
