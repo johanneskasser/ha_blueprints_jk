@@ -1,69 +1,96 @@
 blueprint:
   name: Wake-up light alarm with sunrise effect
-  description: >-
-    A wake-up light alarm with a brightness and color temperature sunrise effect.
-    Supports a single light entity, optional pre-sunrise, and post-sunrise actions.
+  description: 'A wake-up light alarm with a brightness and color temperature sunrise effect. Supports timestamp sensors, input_datetime helpers, or manual time.'
   domain: automation
   input:
     light_entity:
       name: Wake-up light entity
-      description: The light to control during the sunrise effect.
+      description: The light to control. Turning it off during the sunrise will keep it off. Color temperature range is auto-detected.
       selector:
         entity:
           domain: light
     timestamp_sensor:
-      name: Alarm timestamp (sensor or input_datetime)
-      description: >-
-        Sensor or input_datetime entity for the alarm timestamp. If none, uses manual time.
+      name: Alarm timestamp sensor
+      description: 'Sensor with timestamp of next alarm with device_class: timestamp (set to ''none'' if using input_datetime or manual time).'
       default: none
       selector:
         entity: {}
+    input_datetime:
+      name: Input datetime for alarm
+      description: Optional input_datetime entity for alarm time. If not set, falls back to manual time or timestamp sensor.
+      default: none
+      selector:
+        entity:
+          domain: input_datetime
     manual_time:
       name: Manual alarm time
-      description: >-
-        Time to trigger alarm daily if no timestamp sensor is provided. Set in HH:MM:SS format.
+      description: Time to trigger alarm daily if no other sources are set. Set in HH:MM:SS format.
       default: "07:00:00"
       selector:
         time: {}
     check_entity:
-      name: Additional entity to check before sunrise
-      description: >-
-        Optional. Checks if the entity (e.g., device_tracker or person) is 'on' or 'home' before triggering.
+      name: Additional entity to check before sunrise is triggered
+      description: Checks if entity is 'on' or 'home' before triggering (optional).
       default: none
       selector:
         entity: {}
     sunrise_duration:
       name: Sunrise duration
       description: Duration of the sunrise effect in minutes.
-      default: 15
+      default: 25
       selector:
         number:
           min: 5.0
           max: 60.0
           step: 5.0
           unit_of_measurement: min
+    start_brightness:
+      name: Minimum brightness
+      description: The brightness to start with.
+      default: 1
+      selector:
+        number:
+          min: 1
+          max: 255
+          step: 1
+    end_brightness:
+      name: Maximum brightness
+      description: The brightness to transition to.
+      default: 254
+      selector:
+        number:
+          min: 5
+          max: 255
+          step: 1
     pre_sunrise_actions:
       name: Pre-sunrise actions
-      description: Actions to run at the start of the sunrise effect.
+      description: Actions to run before sunrise starts (optional).
       default: []
       selector:
         action: {}
     post_sunrise_actions:
       name: Post-sunrise actions
-      description: Actions to run after the sunrise effect ends.
+      description: Actions to run after sunrise ends (optional).
       default: []
       selector:
         action: {}
 
 variables:
-  light: !input light_entity
+  light_entity: !input light_entity
   timestamp_sensor: !input timestamp_sensor
+  input_datetime: !input input_datetime
   manual_time: !input manual_time
   sunrise_duration: !input sunrise_duration
+  start_brightness: !input start_brightness
+  end_brightness: !input end_brightness
+  range_brightness: "{{ end_brightness - start_brightness }}"
   seconds: "{{ sunrise_duration * 60 }}"
   alarm_time: >-
-    {{ as_timestamp(states(timestamp_sensor)) if states(timestamp_sensor) != 'none' else
-       as_timestamp(states('sensor.date') ~ ' ' ~ manual_time) }}
+    {{ 
+      as_timestamp(states(timestamp_sensor)) if timestamp_sensor != 'none' 
+      else as_timestamp(states(input_datetime)) if input_datetime != 'none' 
+      else as_timestamp(states('sensor.date') ~ ' ' ~ manual_time)
+    }}
   check_entity: !input check_entity
 
 trigger:
@@ -83,22 +110,22 @@ action:
         sequence: !input pre_sunrise_actions
   - service: light.turn_on
     data:
-      brightness: 1
+      brightness: "{{ start_brightness }}"
     target:
-      entity_id: !input light_entity
+      entity_id: "{{ light_entity }}"
   - repeat:
       while:
         - condition: template
           value_template: >-
             {{ alarm_time and as_timestamp(now()) < alarm_time }}
       sequence:
-        - delay: 1
+        - delay: "00:00:01"
         - service: light.turn_on
           data:
             brightness: >-
-              {{ ((as_timestamp(now()) - alarm_time + seconds) / seconds * 255) | int }}
+              {{ start_brightness + ((as_timestamp(now()) - (alarm_time - seconds)) / seconds * range_brightness) | int }}
           target:
-            entity_id: !input light_entity
+            entity_id: "{{ light_entity }}"
   - choose:
       - conditions:
           - condition: template
